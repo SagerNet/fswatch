@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "commitMessagePrefix": "[dependencies]",
+  "branchName": "main",
+  "extends": [
+    "config:base",
+    ":disableRateLimiting"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github-actions"
+    },
+    {
+      "matchManagers": [
+        "gomod"
+      ],
+      "groupName": "gomod"
+    }
+  ]
+}
