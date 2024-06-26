@@ -16,7 +16,7 @@ import (
 
 const DefaultWaitTimeout = 100 * time.Millisecond
 
-// Watcher is a fsnotify watcher to watch files correctly
+// Watcher is a simple fsnotify wrapper to watch updates correctly.
 type Watcher struct {
 	watchDirect bool
 	watchTarget []string
@@ -29,6 +29,7 @@ type Watcher struct {
 
 type Options struct {
 	// Path is the list of files or directories to watch
+	// It is the caller's responsibility to ensure that paths are absolute.
 	Path []string
 
 	// Direct is the flag to watch the file directly if file will never be removed
@@ -93,7 +94,7 @@ func (w *Watcher) Start() error {
 }
 
 func (w *Watcher) Close() error {
-	return w.watcher.Close()
+	return common.Close(common.PtrOrNil(w.watcher))
 }
 
 func (w *Watcher) loopUpdate() {
