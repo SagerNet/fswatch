@@ -3,9 +3,9 @@ module github.com/sagernet/fswatch
 go 1.20
 
 require (
-	github.com/fsnotify/fsnotify v1.7.0
-	github.com/sagernet/sing v0.4.1
-	github.com/stretchr/testify v1.9.0
+	github.com/fsnotify/fsnotify v1.9.0
+	github.com/sagernet/sing v0.8.6
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
