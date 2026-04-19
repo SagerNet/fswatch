@@ -25,6 +25,15 @@ type Watcher struct {
 	waitTimeout time.Duration
 	logger      logger.Logger
 	watcher     *fsnotify.Watcher
+
+	stateAccess sync.Mutex
+	timerMap    map[string]pendingCallback
+	closed      bool
+}
+
+type pendingCallback struct {
+	generation uint64
+	timer      *time.Timer
 }
 
 type Options struct {
@@ -74,6 +83,7 @@ func NewWatcher(options Options) (*Watcher, error) {
 		callback:    options.Callback,
 		waitTimeout: waitTimeout,
 		logger:      options.Logger,
+		timerMap:    make(map[string]pendingCallback),
 	}, nil
 }
 
@@ -94,12 +104,28 @@ func (w *Watcher) Start() error {
 }
 
 func (w *Watcher) Close() error {
-	return common.Close(common.PtrOrNil(w.watcher))
+	w.stateAccess.Lock()
+	if w.closed {
+		watcher := w.watcher
+		w.stateAccess.Unlock()
+		return common.Close(common.PtrOrNil(watcher))
+	}
+	w.closed = true
+	timers := make([]*time.Timer, 0, len(w.timerMap))
+	for path, pending := range w.timerMap {
+		timers = append(timers, pending.timer)
+		delete(w.timerMap, path)
+	}
+	watcher := w.watcher
+	w.stateAccess.Unlock()
+
+	for _, timer := range timers {
+		timer.Stop()
+	}
+	return common.Close(common.PtrOrNil(watcher))
 }
 
 func (w *Watcher) loopUpdate() {
-	var timerAccess sync.Mutex
-	timerMap := make(map[string]*time.Timer)
 	for {
 		select {
 		case event, loaded := <-w.watcher.Events:
@@ -111,19 +137,7 @@ func (w *Watcher) loopUpdate() {
 					w.logger.Error("fswatch: watcher removed: ", event.Name)
 				}
 			} else if common.Contains(w.watchPath, event.Name) && (event.Has(fsnotify.Create) || event.Has(fsnotify.Write)) {
-				timerAccess.Lock()
-				timer := timerMap[event.Name]
-				if timer != nil {
-					timer.Reset(w.waitTimeout)
-				} else {
-					timerMap[event.Name] = time.AfterFunc(w.waitTimeout, func() {
-						w.callback(event.Name)
-						timerAccess.Lock()
-						delete(timerMap, event.Name)
-						timerAccess.Unlock()
-					})
-				}
-				timerAccess.Unlock()
+				w.scheduleCallback(event.Name)
 			}
 		case err, loaded := <-w.watcher.Errors:
 			if !loaded {
@@ -134,4 +148,42 @@ func (w *Watcher) loopUpdate() {
 			}
 		}
 	}
+}
+
+func (w *Watcher) scheduleCallback(path string) {
+	w.stateAccess.Lock()
+	if w.closed {
+		w.stateAccess.Unlock()
+		return
+	}
+
+	pending := w.timerMap[path]
+	generation := pending.generation + 1
+	if pending.timer != nil {
+		pending.timer.Stop()
+	}
+	w.timerMap[path] = pendingCallback{
+		generation: generation,
+		timer:      time.AfterFunc(w.waitTimeout, func() { w.fireCallback(path, generation) }),
+	}
+	w.stateAccess.Unlock()
+}
+
+func (w *Watcher) fireCallback(path string, generation uint64) {
+	w.stateAccess.Lock()
+	if w.closed {
+		w.stateAccess.Unlock()
+		return
+	}
+
+	pending, loaded := w.timerMap[path]
+	if !loaded || pending.generation != generation {
+		w.stateAccess.Unlock()
+		return
+	}
+	delete(w.timerMap, path)
+	callback := w.callback
+	w.stateAccess.Unlock()
+
+	callback(path)
 }
