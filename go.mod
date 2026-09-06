@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/sagernet/sing v0.9.0
+	github.com/sagernet/sing v0.9.2
 	github.com/stretchr/testify v1.12.1
 )
 
